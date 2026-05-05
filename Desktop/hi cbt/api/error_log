@@ -1,0 +1,35 @@
+[05-May-2026 12:35:22 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:35:33 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:35:47 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:43:30 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:44:21 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:44:43 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:25
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(25): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 25
+[05-May-2026 12:45:33 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1267 Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '=' in /home/siuxgjee/himmedia.ng/api/courses.php:26
+Stack trace:
+#0 /home/siuxgjee/himmedia.ng/api/courses.php(26): PDO->prepare('SELECT COUNT(*)...')
+#1 {main}
+  thrown in /home/siuxgjee/himmedia.ng/api/courses.php on line 26
