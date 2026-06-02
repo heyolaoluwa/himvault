@@ -1488,11 +1488,13 @@ async function confirmDeleteUser(uid) {
   } catch(e) { toast(e.message); }
 }
 
+let _bulkDeleteCadres = null;
+
 function bulkDeleteUsers() {
   const checked = [...document.querySelectorAll('.bulk-cadre-chk:checked')].map(c => c.value);
   if (!checked.length) { toast('Select at least one cadre first.'); return; }
+  _bulkDeleteCadres = checked;
   const cadreList = checked.map(c => `<strong>${escHtml(c)}</strong>`).join(', ');
-  const safeJson  = JSON.stringify(checked).replace(/</g, '\\u003c');
   openModal(`<div class="modal-hdr"><div class="modal-hdr-title">Bulk Delete Members</div><button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="alert alert-danger">You are about to permanently delete <strong>all members</strong> in:<br><br>
@@ -1501,11 +1503,14 @@ function bulkDeleteUsers() {
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="confirmBulkDeleteUsers(${safeJson})">Yes, Delete All</button>
+      <button class="btn btn-danger" onclick="confirmBulkDeleteUsers()">Yes, Delete All</button>
     </div>`);
 }
 
-async function confirmBulkDeleteUsers(cadres) {
+async function confirmBulkDeleteUsers() {
+  const cadres = _bulkDeleteCadres;
+  _bulkDeleteCadres = null;
+  if (!cadres || !cadres.length) return;
   try {
     const data = await apiPost('users.php', {action:'bulk_delete', cadres});
     closeModal();
