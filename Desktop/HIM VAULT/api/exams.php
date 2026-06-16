@@ -244,7 +244,7 @@ if ($action === 'release_results') {
     try { $db->exec("ALTER TABLE exams ADD COLUMN result_release_time DATETIME NULL DEFAULT NULL"); }
     catch (PDOException $ignore) {}
 
-    $db->prepare('UPDATE exams SET result_release_time = NOW() WHERE id = ?')->execute([$exam_id]);
+    $db->prepare('UPDATE exams SET result_release_time = UTC_TIMESTAMP() WHERE id = ?')->execute([$exam_id]);
     json_out(['ok' => true]);
 }
 

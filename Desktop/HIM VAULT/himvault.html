@@ -57,7 +57,15 @@ body{font-family:var(--font);background:var(--surface);color:var(--text);min-hei
 .auth-left::before{content:'';position:absolute;top:-80px;right:-60px;width:320px;height:320px;background:rgba(255,255,255,.04);border-radius:50%}
 .auth-left::after{content:'';position:absolute;bottom:-100px;left:-50px;width:280px;height:280px;background:rgba(255,255,255,.025);border-radius:50%}
 .auth-brand{position:relative;z-index:1}
-.auth-logo{font-size:30px;font-weight:800;color:#fff;letter-spacing:-1px}
+.auth-logo{font-size:30px;font-weight:800;color:#fff;letter-spacing:-1px;display:flex;align-items:center;gap:10px}
+.auth-logo img{height:30px;width:30px;object-fit:contain;border-radius:7px;flex-shrink:0}
+.auth-powered{font-size:11px;color:rgba(255,255,255,.45);margin-top:6px}
+.auth-powered a{color:rgba(255,255,255,.65);text-decoration:none}
+.auth-powered a:hover{color:#fff}.auth-form-title{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.5px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.auth-form-title img{height:24px;width:24px;object-fit:contain;border-radius:5px;flex-shrink:0}
+#app-footer{padding:12px 24px;text-align:center;font-size:11.5px;color:var(--text-l);border-top:1px solid var(--border);background:var(--card);margin-top:auto}
+#app-footer a{color:var(--text-m);text-decoration:none;font-weight:600}
+#app-footer a:hover{color:var(--primary)}
 .auth-tagline{font-size:14px;color:rgba(255,255,255,.6);margin-top:12px;line-height:1.7;max-width:340px}
 .auth-features{position:relative;z-index:1}
 .auth-feat{display:flex;align-items:flex-start;gap:14px;margin-bottom:22px}
@@ -67,7 +75,6 @@ body{font-family:var(--font);background:var(--surface);color:var(--text);min-hei
 .auth-copy{font-size:11px;color:rgba(255,255,255,.25);position:relative;z-index:1}
 .auth-right{flex:1;display:flex;align-items:center;justify-content:center;padding:40px}
 .auth-form-wrap{width:100%;max-width:400px}
-.auth-form-title{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.5px;margin-bottom:6px}
 .auth-form-sub{font-size:13px;color:var(--text-m);margin-bottom:28px}
 .demo-box{background:var(--surface);border-radius:var(--r);padding:14px 16px;font-size:11.5px;color:var(--text-m);margin-top:18px;line-height:1.8;border:1px solid var(--border)}
 .demo-box strong{color:var(--text);display:block;margin-bottom:4px}
@@ -251,6 +258,35 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
 .forgot-link{background:none;border:none;cursor:pointer;font-size:12.5px;color:var(--text-m);font-family:var(--font);text-decoration:underline;text-underline-offset:2px}
 .forgot-link:hover{color:var(--text)}
 
+/* ── TUTORIALS ────────────────────────────────────────────── */
+.tut-cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:8px}
+.tut-cat-card{background:var(--card);border-radius:var(--r-lg);padding:24px;cursor:pointer;border:2px solid var(--border);transition:all .2s;position:relative;overflow:hidden}
+.tut-cat-card:hover{border-color:var(--primary-l);box-shadow:var(--sh-md);transform:translateY(-2px)}
+.tut-cat-card.completed{border-color:var(--success)}
+.tut-cat-icon{font-size:32px;margin-bottom:12px}
+.tut-cat-name{font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px}
+.tut-cat-desc{font-size:12px;color:var(--text-m);line-height:1.5;margin-bottom:14px;min-height:32px}
+.tut-cat-meta{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--text-m)}
+.tut-progress-bar{height:5px;background:var(--border);border-radius:3px;margin-top:10px;overflow:hidden}
+.tut-progress-fill{height:100%;background:var(--primary);border-radius:3px;transition:width .4s}
+.tut-complete-badge{position:absolute;top:12px;right:12px;background:var(--success-bg);color:var(--success);font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;letter-spacing:.3px}
+.tut-flashcard-wrap{max-width:700px;margin:0 auto}
+.tut-flashcard{background:var(--card);border-radius:var(--r-xl);padding:40px 44px;min-height:300px;display:flex;flex-direction:column;box-shadow:var(--sh-md);border:1px solid var(--border)}
+.tut-flashcard.slide-in-right{animation:tutSlideR .3s ease}
+.tut-flashcard.slide-in-left{animation:tutSlideL .3s ease}
+@keyframes tutSlideR{from{opacity:0;transform:translateX(32px)}to{opacity:1;transform:translateX(0)}}
+@keyframes tutSlideL{from{opacity:0;transform:translateX(-32px)}to{opacity:1;transform:translateX(0)}}
+.tut-q-num{font-size:11px;font-weight:700;color:var(--primary-l);letter-spacing:1px;text-transform:uppercase;margin-bottom:16px}
+.tut-q-text{font-size:17px;font-weight:700;color:var(--text);line-height:1.65;margin-bottom:28px}
+.tut-card-controls{margin-top:auto;padding-top:8px}
+.tut-answer-wrap{border-top:2px solid var(--primary-bg);padding-top:0;margin-top:20px;max-height:0;overflow:hidden;transition:max-height .45s ease,padding-top .3s}
+.tut-answer-wrap.visible{max-height:600px;padding-top:20px}
+.tut-answer-label{font-size:10.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.tut-answer-text{font-size:14px;color:var(--text);line-height:1.75;white-space:pre-wrap}
+.tut-nav{display:flex;align-items:center;justify-content:space-between;margin-top:20px}
+.tut-dots{display:flex;align-items:center;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:14px}
+.tut-viewed-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:transform .15s,background .2s;cursor:default}
+
 /* ── MOBILE ───────────────────────────────────────────────── */
 #menu-toggle{display:none;background:none;border:none;font-size:22px;cursor:pointer;padding:4px;color:var(--text)}
 @media(max-width:768px){
@@ -279,7 +315,8 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
 <div id="auth-screen">
   <div class="auth-left">
     <div class="auth-brand">
-      <div class="auth-logo">HIMVault</div>
+      <div class="auth-logo"><img src="logo.png" alt="HIMVault Logo"> HIMVault</div>
+      <div class="auth-powered">Powered by <a href="https://himmedia.ng" target="_blank" rel="noopener noreferrer">himmedia.ng</a></div>
       <div class="auth-tagline">Nigeria's premier platform for Health Information Management students across West Africa. Learn, practice and excel.</div>
     </div>
     <div class="auth-features">
@@ -304,7 +341,7 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
   </div>
   <div class="auth-right">
     <div class="auth-form-wrap">
-      <div class="auth-form-title">Welcome to HIMVault</div>
+      <div class="auth-form-title"><img src="logo.png" alt=""> Welcome to HIMVault</div>
       <div class="auth-form-sub" id="auth-sub">Sign in to continue your HIM journey</div>
 
       <div class="tab-bar" style="margin-bottom:22px">
@@ -452,6 +489,25 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
         </div>
       </div>
 
+      <!-- TUTORIALS -->
+      <div id="page-tutorials" class="page-hidden">
+        <div class="page-hdr">
+          <div><div class="page-title">Tutorials</div><div class="page-sub">Study materials and practice questions to prepare for your exams</div></div>
+        </div>
+        <div id="tut-categories-view">
+          <div class="tut-cat-grid" id="tut-cat-grid"></div>
+        </div>
+        <div id="tut-flashcard-view" style="display:none">
+          <button class="btn btn-ghost btn-sm" style="margin-bottom:20px" onclick="showTutCategories()">← Back to Topics</button>
+          <div class="tut-flashcard-wrap">
+            <div id="tut-cat-header" style="margin-bottom:20px"></div>
+            <div class="tut-flashcard" id="tut-flashcard"></div>
+            <div class="tut-nav" id="tut-nav"></div>
+            <div class="tut-dots" id="tut-dots"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ADMIN / TUTOR -->
       <div id="page-admin" class="page-hidden">
         <div class="page-hdr">
@@ -463,6 +519,7 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
       </div>
 
     </div><!-- /page-content -->
+    <div id="app-footer">Powered by <a href="https://himmedia.ng" target="_blank" rel="noopener noreferrer">himmedia.ng</a></div>
   </div><!-- /main -->
 </div><!-- /app -->
 
@@ -551,7 +608,7 @@ hr{border:none;border-top:1px solid var(--border);margin:18px 0}
 <script>
 'use strict';
 
-let state = {user:null,page:'dashboard',editingProfile:false,currentCourse:null,currentTopic:null,activeGroup:null,examFilter:'upcoming',adminTab:'overview'};
+let state = {user:null,page:'dashboard',editingProfile:false,currentCourse:null,currentTopic:null,activeGroup:null,examFilter:'upcoming',adminTab:'overview',tutCatId:null,tutQuestions:[],tutIndex:0,tutAdminCatId:null};
 let examState = {active:null,questions:[],answers:{},current:0,timeLeft:0,timerInterval:null};
 /* ── DATA STORE ─────────────────────────────────────────── */
 </script>

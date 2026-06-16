@@ -31,17 +31,24 @@ async function apiGet(file, params = {}) {
 }
 
 // ── RESET SHARED STATE (declared by inline script) ───────────────
-state.user        = null;
-state.page        = 'dashboard';
-state.activeGroup = null;
-state.examFilter  = 'upcoming';
-state.adminTab    = 'overview';
+state.user          = null;
+state.page          = 'dashboard';
+state.activeGroup   = null;
+state.examFilter    = 'upcoming';
+state.adminTab      = 'overview';
+state.tutCatId      = null;
+state.tutQuestions  = [];
+state.tutIndex      = 0;
+state.tutAdminCatId = null;
 
 // ── UTILITIES ────────────────────────────────────────────────────
 // MySQL returns "YYYY-MM-DD HH:MM:SS" with a space. new Date() treats that format
 // as Invalid Date in Firefox and as local time in Chrome — replace with T so all
 // browsers parse it consistently as local time.
 const parseServerDate = d => new Date((d||'').replace(' ','T'));
+// result_release_time is stored as UTC_TIMESTAMP() — parse with Z suffix so all
+// browsers treat it as UTC regardless of local timezone.
+const parseReleaseTime = d => d ? new Date((d).replace(' ','T') + 'Z') : null;
 
 const fmtDate = d => parseServerDate(d).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'});
 const fmtTime = d => parseServerDate(d).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'});
@@ -211,7 +218,7 @@ async function doRegister() {
   errEl.style.display = 'none';
   try {
     const data = await apiPost('auth.php', {action:'register', name, email, password, cadre, institution});
-    if (data.matric_no) toast(`Your Matric No: ${data.matric_no} — please keep it safe!`, 7000);
+    if (data.matric_no) toast(`Your Member ID: ${data.matric_no} — please keep it safe!`, 7000);
     loginUser(data.user);
   } catch(e) {
     errEl.style.display = '';
@@ -252,12 +259,12 @@ async function navTo(page) {
   });
   document.getElementById('header-title').textContent = {
     dashboard:'Dashboard', exams:'CBT Examinations', learn:'Learning Centre',
-    community:'Community', profile:'My Profile',
+    community:'Community', profile:'My Profile', tutorials:'Tutorials',
     admin: state.user.role==='admin' ? 'Admin Dashboard' : 'Tutor Panel',
   }[page] || page;
   const renders = {
     dashboard:renderDashboard, exams:renderExams, learn:renderLearn,
-    community:renderCommunity, profile:renderProfile, admin:renderAdmin,
+    community:renderCommunity, profile:renderProfile, tutorials:renderTutorials, admin:renderAdmin,
   };
   if (renders[page]) await renders[page]().catch(e => toast(e.message));
   if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
@@ -271,9 +278,10 @@ function toggleSidebar() {
 function buildSidebar() {
   const u = state.user;
   const pages = [
-    {page:'dashboard', icon:'⊞', label:'Dashboard'},
+    {page:'dashboard', icon:'⊞',  label:'Dashboard'},
     {page:'exams',     icon:'📋', label:'CBT Exams'},
     ...(u.role==='admin' ? [{page:'learn', icon:'📚', label:'Learning'}] : []),
+    {page:'tutorials', icon:'📖', label:'Tutorials'},
     {page:'community', icon:'💬', label:'Community'},
     {page:'profile',   icon:'👤', label:'Profile'},
     ...(u.role==='admin'||u.role==='tutor'
@@ -408,7 +416,7 @@ function examCard(e, u, now) {
   const regOpen  = eff === 'registration_open' ||
     (eff === 'upcoming' && parseServerDate(e.registration_deadline) > now);
   const released = e.result_release_time &&
-    parseServerDate(e.result_release_time) <= now;
+    parseReleaseTime(e.result_release_time) <= now;
   const c      = cadreColor[e.cadre] || 'var(--primary)';
   const bg     = cadreBg[e.cadre]   || 'var(--primary-bg)';
   const qCount = e.question_count   || 0;
@@ -546,7 +554,7 @@ async function renderProgress() {
     const count  = attempts.length;
 
     // Stats only count released results so scores stay hidden until admin releases
-    const relList   = attempts.filter(a => a.result_release_time && parseServerDate(a.result_release_time) <= now);
+    const relList   = attempts.filter(a => a.result_release_time && parseReleaseTime(a.result_release_time) <= now);
     const relScores = relList.map(a => a.total ? Math.round(a.score / a.total * 100) : 0);
     const avgPct    = relList.length ? Math.round(relScores.reduce((s,v)=>s+v,0) / relList.length) : null;
     const passes    = relList.filter(a => a.total && a.score / a.total >= 0.5).length;
@@ -571,7 +579,7 @@ async function renderProgress() {
 
     // Chart bars: grey + "?" for unreleased, colored for released
     const bars = attempts.map((a, i) => {
-      const rel  = a.result_release_time && parseServerDate(a.result_release_time) <= now;
+      const rel  = a.result_release_time && parseReleaseTime(a.result_release_time) <= now;
       const pct  = rel && a.total ? Math.round(a.score / a.total * 100) : null;
       const col  = pct !== null ? (pct >= 50 ? 'var(--success)' : 'var(--danger)') : '#D8E4E0';
       const barH = pct !== null ? pct : 30;
@@ -594,7 +602,7 @@ async function renderProgress() {
     // For trend lines, only compare against adjacent released attempts
     const sorted    = [...attempts].reverse();
     const cardsHtml = sorted.map((a) => {
-      const rel    = a.result_release_time && parseServerDate(a.result_release_time) <= now;
+      const rel    = a.result_release_time && parseReleaseTime(a.result_release_time) <= now;
       const pct    = rel && a.total ? Math.round(a.score / a.total * 100) : null;
       const passed = rel && a.total && a.score / a.total >= 0.5;
 
@@ -657,9 +665,9 @@ function verifyMatricAndStart(id) {
   if(!u.matric_no||u.role==='admin'||u.role==='tutor'){startExam(id);return;}
   openModal(`<div class="modal-hdr"><div class="modal-hdr-title">Verify Your Identity</div><button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div style="font-size:13.5px;color:var(--text-m);margin-bottom:18px;line-height:1.6">Enter your Matriculation Number exactly as issued at registration to begin the exam.</div>
+      <div style="font-size:13.5px;color:var(--text-m);margin-bottom:18px;line-height:1.6">Enter your Member ID exactly as issued at registration to begin the exam.</div>
       <div class="form-group">
-        <label class="lbl">Matriculation Number</label>
+        <label class="lbl">Member ID</label>
         <input class="inp" id="matric-verify" placeholder="e.g. HIMV/ND/0001" style="font-family:var(--mono);font-size:15px;letter-spacing:1.5px;text-transform:uppercase" onkeydown="if(event.key==='Enter')confirmMatricAndStart('${id}')">
       </div>
       <div id="matric-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
@@ -677,7 +685,7 @@ function confirmMatricAndStart(id) {
   if(entered!==expected){
     const err = document.getElementById('matric-err');
     err.style.display = '';
-    err.textContent = 'Incorrect Matric Number. Please check and try again.';
+    err.textContent = 'Incorrect Member ID. Please check and try again.';
     return;
   }
   closeModal();
@@ -702,7 +710,7 @@ async function startExam(id) {
     document.getElementById('exam-screen').style.display = 'block';
     document.getElementById('exam-screen-title').textContent = exam.title;
     document.getElementById('exam-screen-matric').textContent =
-      state.user.matric_no ? `Matric: ${state.user.matric_no}` : '';
+      state.user.matric_no ? `Member ID: ${state.user.matric_no}` : '';
     renderExamQuestion();
     buildQNav();
     startExamTimer();
@@ -1317,7 +1325,7 @@ function renderProfileDetails(editing) {
       <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>`;
   } else {
     const rows = [
-      ...(u.matric_no?[['Matric No',`<span style="font-family:var(--mono);font-size:14px;color:var(--primary);font-weight:700">${escHtml(u.matric_no)}</span>`]]:[]),
+      ...(u.matric_no?[['Member ID',`<span style="font-family:var(--mono);font-size:14px;color:var(--primary);font-weight:700">${escHtml(u.matric_no)}</span>`]]:[]),
       ['Email', escHtml(u.email)],
       ['Institution', escHtml(u.institution||'—')],
       ['Cadre', escHtml(u.cadre||'—')],
@@ -1351,8 +1359,8 @@ async function renderAdmin() {
   const u = state.user, isTutor = u.role==='tutor';
   document.getElementById('admin-title').textContent = isTutor?'Tutor Panel':'Admin Dashboard';
   const tabs = isTutor
-    ? [['groups','My Groups'],['content','Content']]
-    : [['overview','Overview'],['users','Users'],['exams','Exams'],['results','Results'],['courses','Courses']];
+    ? [['groups','My Groups'],['content','Content'],['tutorials','Tutorials']]
+    : [['overview','Overview'],['users','Users'],['exams','Exams'],['results','Results'],['courses','Courses'],['tutorials','Tutorials']];
   // Reset adminTab if it's not valid for this role (e.g. tutor inheriting admin's tab)
   if (!tabs.find(([k])=>k===state.adminTab)) state.adminTab = tabs[0][0];
   document.getElementById('admin-tabs').innerHTML = tabs.map(([k,l])=>
@@ -1365,6 +1373,7 @@ async function renderAdmin() {
 }
 
 async function switchAdminTab(tab) {
+  state.tutAdminCatId = null;
   state.adminTab = tab;
   document.querySelectorAll('#admin-tabs .tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.tab === tab);
@@ -1383,6 +1392,7 @@ async function renderAdminTab() {
     else if(tab==='results') await buildAdminResults(el);
     else if(tab==='groups') el.innerHTML = await buildTutorGroups();
     else if(tab==='courses') el.innerHTML = await buildAdminCourses();
+    else if(tab==='tutorials') await buildAdminTutorials(el);
     else el.innerHTML='<div class="empty"><div class="empty-icon">🔧</div><div class="empty-msg">Coming soon</div></div>';
   } catch(e) { el.innerHTML=`<div class="empty"><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`; }
 }
@@ -1439,7 +1449,7 @@ async function buildAdminUsers() {
       <button class="btn btn-danger btn-sm" onclick="bulkDeleteUsers()">🗑 Delete All Members of Selected Cadres</button>
     </div>
     <div class="tbl-wrap"><table>
-    <thead><tr><th>Name</th><th>Matric No</th><th>Email</th><th>Role</th><th>Cadre</th><th>Institution</th><th>Joined</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Member ID</th><th>Email</th><th>Role</th><th>Cadre</th><th>Institution</th><th>Joined</th><th>Actions</th></tr></thead>
     <tbody>${users.map(u=>`<tr>
       <td><strong>${escHtml(u.name)}</strong></td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--primary);font-weight:700">${escHtml(u.matric_no||'—')}</td>
@@ -1534,7 +1544,7 @@ async function buildAdminExams() {
     <thead><tr><th>Exam Title</th><th>Cadre</th><th>Start Time</th><th>Duration</th><th>Registered</th><th>Status</th><th>Override Status</th><th>Actions</th></tr></thead>
     <tbody>${exams.map(e=>{
       const eff      = examEffectiveStatus(e, now);
-      const released = e.result_release_time && parseServerDate(e.result_release_time)<=now;
+      const released = e.result_release_time && parseReleaseTime(e.result_release_time)<=now;
       const statusBadge = eff==='live'?'<span class="badge badge-live">Live</span>'
         :eff==='ended'?'<span class="badge badge-gray">Ended</span>'
         :eff==='registration_open'?'<span class="badge badge-success">Reg. Open</span>'
@@ -1574,7 +1584,7 @@ async function buildAdminResults(el) {
       const qN   = e.question_count||1;
       const avg  = atts.length?Math.round(atts.reduce((s,a)=>s+parseInt(a.score),0)/atts.length):0;
       const pass = atts.length?Math.round(atts.filter(a=>a.score/qN>=.5).length/atts.length*100):0;
-      const rel  = e.result_release_time&&parseServerDate(e.result_release_time)<=Date.now();
+      const rel  = e.result_release_time&&parseReleaseTime(e.result_release_time)<=Date.now();
       card.innerHTML=`
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
           <div>
@@ -1592,7 +1602,7 @@ async function buildAdminResults(el) {
             </div>`).join('')}
         </div>
         <div style="margin-top:14px;overflow-x:auto"><table style="font-size:12px">
-          <thead><tr><th>Name</th><th>Matric No</th><th>Score</th><th>%</th><th>Submitted</th><th>Integrity</th></tr></thead>
+          <thead><tr><th>Name</th><th>Member ID</th><th>Score</th><th>%</th><th>Submitted</th><th>Integrity</th></tr></thead>
           <tbody>${atts.map(a=>`<tr>
             <td>${escHtml(a.name)}</td>
             <td style="font-family:var(--mono)">${escHtml(a.matric_no||'—')}</td>
@@ -1711,7 +1721,7 @@ async function addUser() {
       institution: document.getElementById('au-inst').value,
     });
     closeModal();
-    toast(data.matric_no?`User "${name}" added — Matric: ${data.matric_no}`:`User "${name}" added!`, 5000);
+    toast(data.matric_no?`User "${name}" added — Member ID: ${data.matric_no}`:`User "${name}" added!`, 5000);
     renderAdminTab();
   } catch(e) { toast(e.message); }
 }
@@ -1942,9 +1952,457 @@ async function confirmDeleteExam(examId) {
   } catch(e) { toast(e.message); }
 }
 
+// ── TUTORIALS (MEMBER VIEW) ───────────────────────────────────────
+async function renderTutorials() {
+  await showTutCategories();
+}
+
+async function showTutCategories() {
+  state.tutCatId = null;
+  document.getElementById('tut-categories-view').style.display = '';
+  document.getElementById('tut-flashcard-view').style.display  = 'none';
+  const el = document.getElementById('tut-cat-grid');
+  el.innerHTML = '<div class="empty"><div class="empty-msg" style="color:var(--text-m)">Loading…</div></div>';
+  try {
+    const { categories } = await apiGet('tutorials.php', { action: 'list_categories' });
+    if (!categories.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">📚</div><div class="empty-msg">No tutorial topics available yet. Check back soon!</div></div>';
+      return;
+    }
+    el.innerHTML = categories.map(c => {
+      const pct  = c.question_count > 0 ? Math.round(c.viewed_count / c.question_count * 100) : 0;
+      const done = c.completed ? '<div class="tut-complete-badge">✓ Complete</div>' : '';
+      return `<div class="tut-cat-card${c.completed ? ' completed' : ''}" onclick="openTutCategory(${c.id})">
+        ${done}
+        <div class="tut-cat-icon">${escHtml(c.icon || '📚')}</div>
+        <div class="tut-cat-name">${escHtml(c.name)}</div>
+        <div class="tut-cat-desc">${escHtml(c.description || '')}</div>
+        <div class="tut-cat-meta">
+          <span>${c.question_count} question${c.question_count !== 1 ? 's' : ''}</span>
+          <span>${c.viewed_count}/${c.question_count} viewed</span>
+        </div>
+        <div class="tut-progress-bar"><div class="tut-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`;
+  }
+}
+
+async function openTutCategory(catId) {
+  document.getElementById('tut-categories-view').style.display = 'none';
+  document.getElementById('tut-flashcard-view').style.display  = '';
+  const card = document.getElementById('tut-flashcard');
+  card.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-m)">Loading…</div>';
+  document.getElementById('tut-nav').innerHTML  = '';
+  document.getElementById('tut-dots').innerHTML = '';
+  try {
+    const { questions, category } = await apiGet('tutorials.php', { action: 'list_questions', category_id: catId });
+    if (!questions.length) {
+      card.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-m)">No questions published in this topic yet.</div>';
+      return;
+    }
+    state.tutCatId     = catId;
+    state.tutQuestions = questions;
+    state.tutIndex     = 0;
+    document.getElementById('tut-cat-header').innerHTML =
+      `<div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:26px">${escHtml(category.icon || '📚')}</span>
+        <div>
+          <div style="font-weight:800;font-size:16px">${escHtml(category.name)}</div>
+          <div style="font-size:12px;color:var(--text-m)">${questions.length} question${questions.length !== 1 ? 's' : ''} · Use ← → keys or buttons to navigate · Space to reveal answer</div>
+        </div>
+      </div>`;
+    renderTutCard('right');
+    markTutViewed(questions[0]);
+  } catch(e) {
+    document.getElementById('tut-flashcard').innerHTML = `<div style="padding:20px;color:var(--danger)">${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderTutCard(dir) {
+  const qs  = state.tutQuestions;
+  const idx = state.tutIndex;
+  const q   = qs[idx];
+  const card = document.getElementById('tut-flashcard');
+  card.className = 'tut-flashcard';
+  void card.offsetWidth; // force reflow so animation re-triggers
+  card.classList.add(dir === 'right' ? 'slide-in-right' : 'slide-in-left');
+  card.innerHTML = `
+    <div class="tut-q-num">Question ${idx + 1} of ${qs.length}</div>
+    <div class="tut-q-text">${escHtml(q.question)}</div>
+    <div class="tut-card-controls">
+      <button class="btn btn-primary btn-sm" id="tut-show-btn" onclick="tutShowAnswer()">💡 Show Answer</button>
+    </div>
+    <div class="tut-answer-wrap" id="tut-answer">
+      <div class="tut-answer-label">Answer</div>
+      <div class="tut-answer-text">${escHtml(q.answer)}</div>
+    </div>`;
+
+  document.getElementById('tut-nav').innerHTML =
+    `<button class="btn btn-outline btn-sm" onclick="tutPrev()" ${idx === 0 ? 'disabled' : ''}>← Previous</button>
+     <span style="font-size:13px;color:var(--text-m);font-weight:600">${idx + 1} / ${qs.length}</span>
+     <button class="btn btn-primary btn-sm" onclick="tutNext()" ${idx === qs.length - 1 ? 'disabled' : ''}>Next →</button>`;
+
+  document.getElementById('tut-dots').innerHTML = qs.map((q2, i) =>
+    `<span class="tut-viewed-dot" title="Q${i + 1}${q2.viewed ? ' (viewed)' : ''}"
+      style="background:${q2.viewed ? 'var(--primary)' : 'var(--border)'};${i === idx ? 'transform:scale(1.6)' : ''}"></span>`
+  ).join('');
+}
+
+function tutShowAnswer() {
+  const wrap = document.getElementById('tut-answer');
+  if (wrap) wrap.classList.add('visible');
+  const btn = document.getElementById('tut-show-btn');
+  if (btn) { btn.textContent = '✓ Answer shown'; btn.disabled = true; btn.style.opacity = '.5'; }
+}
+
+function tutNext() {
+  if (state.tutIndex >= state.tutQuestions.length - 1) return;
+  state.tutIndex++;
+  const q = state.tutQuestions[state.tutIndex];
+  renderTutCard('right');
+  markTutViewed(q);
+}
+
+function tutPrev() {
+  if (state.tutIndex <= 0) return;
+  state.tutIndex--;
+  renderTutCard('left');
+}
+
+async function markTutViewed(q) {
+  if (q.viewed) return;
+  q.viewed = true;
+  try { await apiPost('tutorials.php', { action: 'mark_viewed', question_id: q.id }); } catch(_) {}
+}
+
+// ── TUTORIALS (ADMIN / TUTOR VIEW) ───────────────────────────────
+async function buildAdminTutorials(el) {
+  if (state.tutAdminCatId) {
+    await buildTutAdminQuestions(el, state.tutAdminCatId);
+  } else {
+    await buildTutAdminCategories(el);
+  }
+}
+
+async function buildTutAdminCategories(el) {
+  try {
+    const { categories } = await apiGet('tutorials.php', { action: 'list_categories' });
+    const rows = categories.map(c => `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:14px 16px;font-size:20px;width:44px">${escHtml(c.icon || '📚')}</td>
+        <td style="padding:14px 16px">
+          <div style="font-weight:700;font-size:13.5px">${escHtml(c.name)}</div>
+          <div style="font-size:11.5px;color:var(--text-m);margin-top:2px">${escHtml(c.description || '')}</div>
+        </td>
+        <td style="padding:14px 16px;text-align:center;width:100px">
+          <span class="badge" style="background:var(--primary-bg);color:var(--primary)">${c.total_count ?? c.question_count} total</span>
+        </td>
+        <td style="padding:14px 16px;text-align:center;width:110px">
+          <span class="badge" style="background:var(--success-bg);color:var(--success)">${c.question_count} published</span>
+        </td>
+        <td style="padding:14px 16px;text-align:right;white-space:nowrap;width:220px">
+          <button class="btn btn-ghost btn-sm" onclick="tutAdminSelectCat(${c.id})">Manage Questions →</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditCatModal(${c.id})">Edit</button>
+          ${state.user.role === 'admin' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteTutCat(${c.id},'${escHtml(c.name).replace(/'/g,"\\'")}')">Delete</button>` : ''}
+        </td>
+      </tr>`).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-weight:700;font-size:15px">Tutorial Categories</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddCatModal()">＋ Add Category</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700"></th>
+            <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700">Category</th>
+            <th style="padding:11px 16px;text-align:center;font-size:11.5px;color:var(--text-m);font-weight:700">Questions</th>
+            <th style="padding:11px 16px;text-align:center;font-size:11.5px;color:var(--text-m);font-weight:700">Published</th>
+            <th style="padding:11px 16px;text-align:right;font-size:11.5px;color:var(--text-m);font-weight:700">Actions</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-m)">No categories yet. Add one above.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`;
+  }
+}
+
+async function buildTutAdminQuestions(el, catId) {
+  try {
+    const { questions, category } = await apiGet('tutorials.php', { action: 'list_questions', category_id: catId });
+    const rows = questions.map((q, i) => `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:14px 16px;width:36px;color:var(--text-m);font-size:12px;font-weight:700">${i + 1}</td>
+        <td style="padding:14px 16px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:5px">${escHtml(q.question)}</div>
+          <div style="font-size:12px;color:var(--text-m);line-height:1.6;white-space:pre-wrap">${escHtml(q.answer)}</div>
+        </td>
+        <td style="padding:14px 16px;text-align:center;width:120px">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;color:${q.published ? 'var(--success)' : 'var(--text-m)'}">
+            <input type="checkbox" ${q.published ? 'checked' : ''} onchange="toggleTutPublish(${q.id},this.checked)"
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)">
+            ${q.published ? 'Published' : 'Draft'}
+          </label>
+        </td>
+        <td style="padding:14px 16px;text-align:right;white-space:nowrap;width:130px">
+          <button class="btn btn-ghost btn-sm" onclick="openEditQuestionModal(${q.id},${catId})">Edit</button>
+          ${state.user.role === 'admin' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteTutQuestion(${q.id})">Delete</button>` : ''}
+        </td>
+      </tr>`).join('');
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="tutAdminBack()">← All Categories</button>
+        <span style="font-size:20px">${escHtml(category.icon || '📚')}</span>
+        <div style="font-weight:800;font-size:15px;flex:1">${escHtml(category.name)}</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddQuestionModal(${catId})">＋ Add Question</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700">#</th>
+            <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700">Question & Answer</th>
+            <th style="padding:11px 16px;text-align:center;font-size:11.5px;color:var(--text-m);font-weight:700">Status</th>
+            <th style="padding:11px 16px;text-align:right;font-size:11.5px;color:var(--text-m);font-weight:700">Actions</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="4" style="padding:32px;text-align:center;color:var(--text-m)">No questions yet. Add one above.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function tutAdminSelectCat(catId) {
+  state.tutAdminCatId = catId;
+  renderAdminTab();
+}
+
+function tutAdminBack() {
+  state.tutAdminCatId = null;
+  renderAdminTab();
+}
+
+// Category modals
+function openAddCatModal() {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">Add Category</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group">
+      <label class="lbl">Icon (emoji)</label>
+      <input class="inp" id="tc-icon" value="📚" maxlength="4" style="max-width:80px">
+    </div>
+    <div class="form-group">
+      <label class="lbl">Category Name *</label>
+      <input class="inp" id="tc-name" placeholder="e.g. Clinical Coding">
+    </div>
+    <div class="form-group">
+      <label class="lbl">Description</label>
+      <input class="inp" id="tc-desc" placeholder="Brief description of this topic">
+    </div>
+    <input type="hidden" id="tc-id" value="">
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="saveTutCat()">Save Category</button>
+  </div>`);
+}
+
+async function openEditCatModal(id) {
+  try {
+    const { categories } = await apiGet('tutorials.php', { action: 'list_categories' });
+    const c = categories.find(x => x.id === id);
+    if (!c) { toast('Category not found'); return; }
+    openModal(`<div class="modal-hdr">
+      <div class="modal-hdr-title">Edit Category</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="lbl">Icon (emoji)</label>
+        <input class="inp" id="tc-icon" value="${escHtml(c.icon || '📚')}" maxlength="4" style="max-width:80px">
+      </div>
+      <div class="form-group">
+        <label class="lbl">Category Name *</label>
+        <input class="inp" id="tc-name" value="${escHtml(c.name)}">
+      </div>
+      <div class="form-group">
+        <label class="lbl">Description</label>
+        <input class="inp" id="tc-desc" value="${escHtml(c.description || '')}">
+      </div>
+      <input type="hidden" id="tc-id" value="${c.id}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTutCat()">Save Changes</button>
+    </div>`);
+  } catch(e) { toast(e.message); }
+}
+
+async function saveTutCat() {
+  const name = document.getElementById('tc-name').value.trim();
+  const desc = document.getElementById('tc-desc').value.trim();
+  const icon = document.getElementById('tc-icon').value.trim() || '📚';
+  const id   = document.getElementById('tc-id').value;
+  if (!name) { toast('Category name is required'); return; }
+  try {
+    if (id) {
+      await apiPost('tutorials.php', { action: 'update_category', id: parseInt(id), name, description: desc, icon });
+      toast('Category updated');
+    } else {
+      await apiPost('tutorials.php', { action: 'create_category', name, description: desc, icon });
+      toast('Category created');
+    }
+    closeModal();
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
+}
+
+function deleteTutCat(id, name) {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">Delete Category</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="alert alert-danger">You are about to permanently delete <strong>${escHtml(name)}</strong> and all its questions and progress records. This cannot be undone.</div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-danger" onclick="confirmDeleteTutCat(${id})">Delete Permanently</button>
+  </div>`);
+}
+
+async function confirmDeleteTutCat(id) {
+  try {
+    await apiPost('tutorials.php', { action: 'delete_category', id });
+    closeModal();
+    toast('Category deleted');
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
+}
+
+// Question modals
+function openAddQuestionModal(catId) {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">Add Question</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group">
+      <label class="lbl">Question *</label>
+      <textarea class="inp" id="tq-question" rows="3" placeholder="Enter the question…" style="resize:vertical"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="lbl">Answer *</label>
+      <textarea class="inp" id="tq-answer" rows="4" placeholder="Enter the full answer…" style="resize:vertical"></textarea>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="tq-published" style="width:16px;height:16px;accent-color:var(--success)">
+      <label for="tq-published" style="font-size:13px;font-weight:600;cursor:pointer">Publish immediately (visible to members)</label>
+    </div>
+    <input type="hidden" id="tq-cat-id" value="${catId}">
+    <input type="hidden" id="tq-id" value="">
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="saveTutQuestion()">Save Question</button>
+  </div>`);
+}
+
+async function openEditQuestionModal(id, catId) {
+  try {
+    const { questions } = await apiGet('tutorials.php', { action: 'list_questions', category_id: catId });
+    const q = questions.find(x => x.id === id);
+    if (!q) { toast('Question not found'); return; }
+    openModal(`<div class="modal-hdr">
+      <div class="modal-hdr-title">Edit Question</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="lbl">Question *</label>
+        <textarea class="inp" id="tq-question" rows="3" style="resize:vertical">${escHtml(q.question)}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="lbl">Answer *</label>
+        <textarea class="inp" id="tq-answer" rows="4" style="resize:vertical">${escHtml(q.answer)}</textarea>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="tq-published" ${q.published ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--success)">
+        <label for="tq-published" style="font-size:13px;font-weight:600;cursor:pointer">Published (visible to members)</label>
+      </div>
+      <input type="hidden" id="tq-cat-id" value="${catId}">
+      <input type="hidden" id="tq-id" value="${id}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTutQuestion()">Save Changes</button>
+    </div>`);
+  } catch(e) { toast(e.message); }
+}
+
+async function saveTutQuestion() {
+  const question  = document.getElementById('tq-question').value.trim();
+  const answer    = document.getElementById('tq-answer').value.trim();
+  const catId     = parseInt(document.getElementById('tq-cat-id').value);
+  const id        = document.getElementById('tq-id').value;
+  const published = document.getElementById('tq-published').checked ? 1 : 0;
+  if (!question || !answer) { toast('Question and answer are both required'); return; }
+  try {
+    if (id) {
+      await apiPost('tutorials.php', { action: 'update_question', id: parseInt(id), question, answer, published });
+      toast('Question updated');
+    } else {
+      await apiPost('tutorials.php', { action: 'create_question', category_id: catId, question, answer, published });
+      toast('Question added');
+    }
+    closeModal();
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
+}
+
+async function toggleTutPublish(id, published) {
+  try {
+    await apiPost('tutorials.php', { action: 'toggle_publish', id, published: published ? 1 : 0 });
+    toast(published ? 'Question published' : 'Question set to draft');
+  } catch(e) { toast(e.message); renderAdminTab(); }
+}
+
+function deleteTutQuestion(id) {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">Delete Question</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="alert alert-danger">Delete this question permanently? All member progress for this question will also be removed. This cannot be undone.</div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-danger" onclick="confirmDeleteTutQuestion(${id})">Delete</button>
+  </div>`);
+}
+
+async function confirmDeleteTutQuestion(id) {
+  try {
+    await apiPost('tutorials.php', { action: 'delete_question', id });
+    closeModal();
+    toast('Question deleted');
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
+}
+
 // ── INIT ──────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&document.getElementById('modal-bg').style.display!=='none') closeModal();
+  if(e.key==='Escape'&&document.getElementById('modal-bg').style.display!=='none') { closeModal(); return; }
+  if(state.page==='tutorials'&&state.tutCatId!==null) {
+    if(e.key==='ArrowRight') tutNext();
+    else if(e.key==='ArrowLeft') tutPrev();
+    else if(e.key===' '){ e.preventDefault(); tutShowAnswer(); }
+  }
 });
 
 // Check for existing PHP session on page load; also handle ?reset=TOKEN links
