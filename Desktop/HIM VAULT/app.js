@@ -300,12 +300,16 @@ function buildSidebar() {
 }
 
 function buildHeader() {
-  const u = state.user;
+  const u  = state.user;
   const c  = cadreColor[u.cadre]||'#0D6B52';
   const bg = cadreBg[u.cadre]||'#E0F5EE';
   document.getElementById('header-right').innerHTML =
-    `<span class="badge" style="background:${bg};color:${c}">${escHtml(u.cadre||'')}</span>
+    `<button class="notif-bell-btn" id="notif-bell" onclick="openNotificationsPanel()" title="Notifications">
+       🔔<span id="notif-badge" class="notif-badge" style="display:none">0</span>
+     </button>
+     <span class="badge" style="background:${bg};color:${c}">${escHtml(u.cadre||'')}</span>
      <div class="avatar" style="width:36px;height:36px;background:${c};font-size:13px">${initials(u.name)}</div>`;
+  fetchNotifCount();
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────────
@@ -327,16 +331,18 @@ async function renderDashboard() {
       </div>
     </div>`;
 
-  const [examsRes, coursesRes] = await Promise.all([
+  const [examsRes, coursesRes, tutRes] = await Promise.all([
     apiGet('exams.php',{action:'list'}),
     apiGet('courses.php',{action:'list'}),
+    apiGet('tutorials.php',{action:'list_categories'}).catch(()=>({categories:[]})),
   ]);
-  const exams   = examsRes.exams   || [];
-  const courses = coursesRes.courses || [];
-  const now     = Date.now();
-  const upcoming = exams.filter(e => { const eff=examEffectiveStatus(e,now); return eff==='upcoming'||eff==='registration_open'; });
-  const totalT   = courses.reduce((s,c)=>s+(c.topic_count||0),0);
-  const doneT    = courses.reduce((s,c)=>s+(c.completed_count||0),0);
+  const exams      = examsRes.exams      || [];
+  const courses    = coursesRes.courses  || [];
+  const categories = tutRes.categories   || [];
+  const now        = Date.now();
+  const upcoming   = exams.filter(e => { const eff=examEffectiveStatus(e,now); return eff==='upcoming'||eff==='registration_open'; });
+  const totalT     = courses.reduce((s,c)=>s+(c.topic_count||0),0);
+  const doneT      = courses.reduce((s,c)=>s+(c.completed_count||0),0);
 
   const stats = u.role==='admin'
     ? [['Exams',exams.length],['Courses',courses.length],['Upcoming',upcoming.length]]
@@ -370,6 +376,24 @@ async function renderDashboard() {
       </div>`;
     }).join('') || '<div style="font-size:13px;color:var(--text-m)">No courses available.</div>';
   }
+
+  // Tutorial progress widget
+  const withQs    = categories.filter(c => c.question_count > 0);
+  const started   = withQs.filter(c => c.viewed_count > 0);
+  const completed = withQs.filter(c => c.completed).length;
+  document.getElementById('dash-tutorials-list').innerHTML = started.length === 0
+    ? `<div style="font-size:13px;color:var(--text-m)">${withQs.length} topic${withQs.length!==1?'s':''} available — start studying to track your progress!</div>`
+    : started.slice(0,3).map(c => {
+        const pct = Math.round(c.viewed_count / c.question_count * 100);
+        return `<div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px">
+            <span style="font-weight:700">${escHtml(c.icon||'📚')} ${escHtml(c.name)}</span>
+            <span style="color:${c.completed?'var(--success)':'var(--text-m)'}">${pct}%${c.completed?' ✓':''}</span>
+          </div>
+          <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%;${c.completed?'background:var(--success)':''}"></div></div>
+        </div>`;
+      }).join('') +
+      `<div style="font-size:12px;color:var(--text-m);margin-top:4px">${started.length} of ${withQs.length} topic${withQs.length!==1?'s':''} started · ${completed} completed</div>`;
 }
 
 // ── EXAMS ────────────────────────────────────────────────────────
@@ -2157,6 +2181,7 @@ async function buildTutAdminQuestions(el, catId) {
         <button class="btn btn-ghost btn-sm" onclick="tutAdminBack()">← All Categories</button>
         <span style="font-size:20px">${escHtml(category.icon || '📚')}</span>
         <div style="font-weight:800;font-size:15px;flex:1">${escHtml(category.name)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="openBulkUploadModal(${catId})">📋 Bulk Upload</button>
         <button class="btn btn-primary btn-sm" onclick="openAddQuestionModal(${catId})">＋ Add Question</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden">
@@ -2395,6 +2420,161 @@ async function confirmDeleteTutQuestion(id) {
   } catch(e) { toast(e.message); }
 }
 
+// ── NOTIFICATIONS ─────────────────────────────────────────────────
+async function fetchNotifCount() {
+  try {
+    const { unread } = await apiGet('tutorials.php', { action: 'get_notifications' });
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    const n = unread || 0;
+    badge.textContent = n > 99 ? '99+' : n;
+    badge.style.display = n > 0 ? 'flex' : 'none';
+  } catch(_) {}
+}
+
+async function openNotificationsPanel() {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">🔔 Notifications</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div id="notif-list" style="max-height:420px;overflow-y:auto">
+    <div style="padding:24px;text-align:center;color:var(--text-m)">Loading…</div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost btn-sm" onclick="markAllNotifsRead()">Mark all as read</button>
+    <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+  </div>`);
+  try {
+    const { notifications } = await apiGet('tutorials.php', { action: 'get_notifications' });
+    const el = document.getElementById('notif-list');
+    if (!el) return;
+    if (!notifications.length) {
+      el.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-m)">No notifications yet</div>';
+    } else {
+      el.innerHTML = notifications.map(n => `
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;${!+n.is_read?'background:var(--primary-bg)':''}">
+          <span style="font-size:22px;flex-shrink:0">${escHtml(n.category_icon||'📚')}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:${+n.is_read?'500':'700'};color:var(--text)">${escHtml(n.message)}</div>
+            <div style="font-size:11px;color:var(--text-m);margin-top:3px">${fmtDate(n.created_at)}</div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11.5px"
+              onclick="goToTutCategory(${n.category_id})">Go to topic →</button>
+          </div>
+          ${!+n.is_read?'<span style="width:8px;height:8px;background:var(--primary);border-radius:50%;flex-shrink:0;margin-top:4px"></span>':''}
+        </div>`).join('');
+    }
+    // Mark all read silently after opening
+    await apiPost('tutorials.php', { action: 'mark_read' });
+    const badge = document.getElementById('notif-badge');
+    if (badge) badge.style.display = 'none';
+  } catch(e) {
+    const el = document.getElementById('notif-list');
+    if (el) el.innerHTML = `<div style="padding:20px;color:var(--danger)">${escHtml(e.message)}</div>`;
+  }
+}
+
+async function markAllNotifsRead() {
+  try {
+    await apiPost('tutorials.php', { action: 'mark_read' });
+    const badge = document.getElementById('notif-badge');
+    if (badge) badge.style.display = 'none';
+    closeModal();
+    toast('All notifications marked as read');
+  } catch(e) { toast(e.message); }
+}
+
+async function goToTutCategory(catId) {
+  closeModal();
+  await navTo('tutorials');
+  await openTutCategory(catId);
+}
+
+// ── BULK TUTORIAL UPLOAD ──────────────────────────────────────────
+function parseTutorialQA(raw) {
+  const text   = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const blocks = text.split(/\n[ \t]*\n/).map(b => b.trim()).filter(Boolean);
+  const pairs  = [];
+  for (const block of blocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+    // Q: ... / A: ... format
+    if (/^[Qq][:.]\s*/.test(lines[0])) {
+      const q    = lines[0].replace(/^[Qq][:.]\s*/, '').trim();
+      const aRaw = lines.slice(1).map(l => l.replace(/^[Aa][:.]\s*/, '')).join('\n').trim();
+      if (q && aRaw) { pairs.push({ question: q, answer: aRaw }); continue; }
+    }
+    // 1. Question / answer lines format
+    if (/^[0-9]+[.)]\s*/.test(lines[0])) {
+      const q    = lines[0].replace(/^[0-9]+[.)]\s*/, '').trim();
+      const aRaw = lines.slice(1).map(l => l.replace(/^[Aa][:.]\s*/, '')).join('\n').trim();
+      if (q && aRaw) { pairs.push({ question: q, answer: aRaw }); continue; }
+    }
+    // Plain two-line: question / answer
+    if (lines.length >= 2) {
+      const q = lines[0].trim();
+      const a = lines.slice(1).join('\n').trim();
+      if (q && a) pairs.push({ question: q, answer: a });
+    }
+  }
+  return pairs;
+}
+
+function openBulkUploadModal(catId) {
+  openModal(`<div class="modal-hdr">
+    <div class="modal-hdr-title">📋 Bulk Upload Questions</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div style="background:var(--surface);border-radius:var(--r);padding:12px 14px;font-size:12px;color:var(--text-m);margin-bottom:14px;line-height:1.7;border:1px solid var(--border)">
+      <strong style="color:var(--text);display:block;margin-bottom:4px">Supported formats (separate each pair with a blank line):</strong>
+      <code style="font-size:11px">Q: What is a health record?<br>A: A systematic documentation…</code><br><br>
+      <code style="font-size:11px">1. Define clinical coding<br>Medical classification of diagnoses…</code><br><br>
+      <code style="font-size:11px">What does SOAP stand for?<br>Subjective, Objective, Assessment, Plan</code>
+    </div>
+    <div class="form-group">
+      <label class="lbl">Paste Q&A pairs *</label>
+      <textarea class="inp" id="bulk-qa-text" rows="10" placeholder="Paste your questions and answers here…" style="resize:vertical;font-family:var(--mono);font-size:12px" oninput="previewTutBulk()"></textarea>
+    </div>
+    <div id="bulk-preview" style="font-size:12.5px;min-height:20px;margin-top:-6px"></div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <input type="checkbox" id="bulk-published" style="width:16px;height:16px;accent-color:var(--success)">
+      <label for="bulk-published" style="font-size:13px;font-weight:600;cursor:pointer">Publish immediately (visible to members)</label>
+    </div>
+    <input type="hidden" id="bulk-cat-id" value="${catId}">
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="saveBulkTutQuestions()">Upload Questions</button>
+  </div>`);
+}
+
+function previewTutBulk() {
+  const text = (document.getElementById('bulk-qa-text').value || '').trim();
+  const el   = document.getElementById('bulk-preview');
+  if (!el) return;
+  if (!text) { el.innerHTML = ''; return; }
+  const pairs = parseTutorialQA(text);
+  el.innerHTML = pairs.length
+    ? `<span style="color:var(--success);font-weight:700">✅ ${pairs.length} Q&A pair${pairs.length > 1 ? 's' : ''} detected</span>`
+    : `<span style="color:var(--danger);font-weight:700">⚠ No pairs found — check the format above</span>`;
+}
+
+async function saveBulkTutQuestions() {
+  const text      = (document.getElementById('bulk-qa-text').value || '').trim();
+  const catId     = parseInt(document.getElementById('bulk-cat-id').value);
+  const published = document.getElementById('bulk-published').checked ? 1 : 0;
+  const pairs     = parseTutorialQA(text);
+  if (!pairs.length) { toast('No valid Q&A pairs found. Check the format.'); return; }
+  try {
+    const { saved } = await apiPost('tutorials.php', {
+      action: 'bulk_create', category_id: catId, questions: pairs, published,
+    });
+    closeModal();
+    toast(`${saved} question${saved !== 1 ? 's' : ''} uploaded successfully!`);
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
+}
+
 // ── INIT ──────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&document.getElementById('modal-bg').style.display!=='none') { closeModal(); return; }
@@ -2422,3 +2602,6 @@ document.addEventListener('keydown',e=>{
 
 // Refresh exam list every 30 s while on exams page
 setInterval(()=>{ if(state.page==='exams') renderExams(); }, 30000);
+
+// Refresh notification badge every 60 s while logged in
+setInterval(()=>{ if(state.user) fetchNotifCount(); }, 60000);

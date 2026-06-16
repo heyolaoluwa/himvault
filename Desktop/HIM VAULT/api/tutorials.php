@@ -33,16 +33,26 @@ $db->exec("CREATE TABLE IF NOT EXISTS tutorial_progress (
     PRIMARY KEY (user_id, question_id)
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
+$db->exec("CREATE TABLE IF NOT EXISTS tutorial_notifications (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT          NOT NULL,
+    category_id INT          NOT NULL,
+    message     VARCHAR(255) NOT NULL,
+    is_read     TINYINT(1)   DEFAULT 0,
+    created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user (user_id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
 // ── SEED STARTER CATEGORIES ───────────────────────────────────────
 $cnt = (int)$db->query("SELECT COUNT(*) FROM tutorial_categories")->fetchColumn();
 if ($cnt === 0) {
     $seeds = [
-        ['Health Records Management', 'Core concepts of managing patient health information and records',    '🏥', 1],
-        ['Clinical Coding',           'Principles and practices of ICD and procedural coding',              '🔢', 2],
-        ['Medical Terminology',       'Medical prefixes, suffixes, roots and standard language',            '📖', 3],
-        ['ICD-10 Coding',             'International Classification of Diseases 10th revision guidelines',  '📋', 4],
-        ['Health Data & Statistics',  'Collection, analysis and presentation of health data',               '📊', 5],
-        ['Medical Ethics & Law',      'Patient rights, confidentiality and legal frameworks in HIM',        '⚖️', 6],
+        ['Health Records Management', 'Core concepts of managing patient health information and records',   '🏥', 1],
+        ['Clinical Coding',           'Principles and practices of ICD and procedural coding',             '🔢', 2],
+        ['Medical Terminology',       'Medical prefixes, suffixes, roots and standard language',           '📖', 3],
+        ['ICD-10 Coding',             'International Classification of Diseases 10th revision guidelines', '📋', 4],
+        ['Health Data & Statistics',  'Collection, analysis and presentation of health data',              '📊', 5],
+        ['Medical Ethics & Law',      'Patient rights, confidentiality and legal frameworks in HIM',       '⚖️', 6],
     ];
     $ins = $db->prepare("INSERT INTO tutorial_categories (name,description,icon,sort_order) VALUES (?,?,?,?)");
     foreach ($seeds as $s) $ins->execute($s);
@@ -50,6 +60,22 @@ if ($cnt === 0) {
 
 $isPrivileged = in_array($me['role'], ['admin', 'tutor']);
 $isAdmin      = $me['role'] === 'admin';
+
+// ── HELPER: notify members who have started a category ────────────
+function notifyStartedMembers(PDO $db, int $catId, int $excludeUserId, string $message): void {
+    $stmt = $db->prepare(
+        "SELECT DISTINCT tp.user_id FROM tutorial_progress tp
+         JOIN tutorial_questions tq ON tp.question_id = tq.id
+         WHERE tq.category_id = ? AND tp.user_id != ?"
+    );
+    $stmt->execute([$catId, $excludeUserId]);
+    $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!$userIds) return;
+    $ins = $db->prepare("INSERT INTO tutorial_notifications (user_id, category_id, message) VALUES (?,?,?)");
+    foreach ($userIds as $uid) {
+        $ins->execute([(int)$uid, $catId, $message]);
+    }
+}
 
 // ── LIST CATEGORIES ───────────────────────────────────────────────
 if ($action === 'list_categories') {
@@ -131,12 +157,12 @@ if ($action === 'delete_category') {
     if (!$isAdmin) err('Admin only', 403);
     $id = (int)post('id');
     if (!$id) err('id required');
-    // progress rows referencing questions in this category
     $db->prepare(
         "DELETE tp FROM tutorial_progress tp
          JOIN tutorial_questions tq ON tp.question_id=tq.id
          WHERE tq.category_id=?"
     )->execute([$id]);
+    $db->prepare("DELETE FROM tutorial_notifications WHERE category_id=?")->execute([$id]);
     $db->prepare("DELETE FROM tutorial_questions WHERE category_id=?")->execute([$id]);
     $db->prepare("DELETE FROM tutorial_categories WHERE id=?")->execute([$id]);
     json_out(['ok' => true]);
@@ -155,6 +181,12 @@ if ($action === 'create_question') {
     $order = (int)$mo->fetchColumn() + 1;
     $db->prepare("INSERT INTO tutorial_questions (category_id,question,answer,sort_order,published) VALUES (?,?,?,?,?)")
        ->execute([$catId, $question, $answer, $order, $published ? 1 : 0]);
+    if ($published) {
+        $cs = $db->prepare("SELECT name FROM tutorial_categories WHERE id=?");
+        $cs->execute([$catId]);
+        $catName = (string)$cs->fetchColumn();
+        notifyStartedMembers($db, $catId, $me['id'], "New question added to \"$catName\"");
+    }
     json_out(['id' => (int)$db->lastInsertId(), 'ok' => true]);
 }
 
@@ -187,8 +219,50 @@ if ($action === 'toggle_publish') {
     $id        = (int)post('id');
     $published = (int)(post('published') ?? 0);
     if (!$id) err('id required');
+    // Read previous state so we only notify on 0→1 transition
+    $prev = $db->prepare("SELECT published, category_id FROM tutorial_questions WHERE id=?");
+    $prev->execute([$id]);
+    $row = $prev->fetch();
     $db->prepare("UPDATE tutorial_questions SET published=? WHERE id=?")->execute([$published ? 1 : 0, $id]);
+    if ($published && $row && !(int)$row['published']) {
+        $catId = (int)$row['category_id'];
+        $cs    = $db->prepare("SELECT name FROM tutorial_categories WHERE id=?");
+        $cs->execute([$catId]);
+        $catName = (string)$cs->fetchColumn();
+        notifyStartedMembers($db, $catId, $me['id'], "New question published in \"$catName\"");
+    }
     json_out(['ok' => true]);
+}
+
+// ── BULK CREATE QUESTIONS ─────────────────────────────────────────
+if ($action === 'bulk_create') {
+    if (!$isPrivileged) err('Unauthorized', 403);
+    $catId     = (int)post('category_id');
+    $pairs     = post('questions') ?? [];
+    $published = (int)(post('published') ?? 0);
+    if (!$catId) err('category_id required');
+    if (!is_array($pairs) || !count($pairs)) err('questions array required');
+    $mo = $db->prepare("SELECT COALESCE(MAX(sort_order),0) FROM tutorial_questions WHERE category_id=?");
+    $mo->execute([$catId]);
+    $order = (int)$mo->fetchColumn();
+    $ins   = $db->prepare("INSERT INTO tutorial_questions (category_id,question,answer,sort_order,published) VALUES (?,?,?,?,?)");
+    $saved = 0;
+    foreach ($pairs as $p) {
+        $q = trim($p['question'] ?? '');
+        $a = trim($p['answer']   ?? '');
+        if (!$q || !$a) continue;
+        $order++;
+        $ins->execute([$catId, $q, $a, $order, $published ? 1 : 0]);
+        $saved++;
+    }
+    if ($published && $saved > 0) {
+        $cs = $db->prepare("SELECT name FROM tutorial_categories WHERE id=?");
+        $cs->execute([$catId]);
+        $catName = (string)$cs->fetchColumn();
+        $label   = $saved === 1 ? '1 new question' : "$saved new questions";
+        notifyStartedMembers($db, $catId, $me['id'], "$label added to \"$catName\"");
+    }
+    json_out(['saved' => $saved, 'ok' => true]);
 }
 
 // ── MARK VIEWED ───────────────────────────────────────────────────
@@ -197,6 +271,30 @@ if ($action === 'mark_viewed') {
     if (!$qid) err('question_id required');
     $db->prepare("INSERT IGNORE INTO tutorial_progress (user_id,question_id) VALUES (?,?)")
        ->execute([$me['id'], $qid]);
+    json_out(['ok' => true]);
+}
+
+// ── GET NOTIFICATIONS ─────────────────────────────────────────────
+if ($action === 'get_notifications') {
+    $stmt = $db->prepare(
+        "SELECT tn.*, tc.name AS category_name, tc.icon AS category_icon
+         FROM tutorial_notifications tn
+         JOIN tutorial_categories tc ON tn.category_id = tc.id
+         WHERE tn.user_id = ?
+         ORDER BY tn.created_at DESC
+         LIMIT 30"
+    );
+    $stmt->execute([$me['id']]);
+    $notifs = $stmt->fetchAll();
+    $cs = $db->prepare("SELECT COUNT(*) FROM tutorial_notifications WHERE user_id=? AND is_read=0");
+    $cs->execute([$me['id']]);
+    json_out(['notifications' => $notifs, 'unread' => (int)$cs->fetchColumn()]);
+}
+
+// ── MARK NOTIFICATIONS READ ───────────────────────────────────────
+if ($action === 'mark_read') {
+    $db->prepare("UPDATE tutorial_notifications SET is_read=1 WHERE user_id=?")
+       ->execute([$me['id']]);
     json_out(['ok' => true]);
 }
 
