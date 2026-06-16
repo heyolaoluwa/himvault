@@ -265,6 +265,41 @@ if ($action === 'bulk_create') {
     json_out(['saved' => $saved, 'ok' => true]);
 }
 
+// ── BULK PUBLISH ─────────────────────────────────────────────────
+if ($action === 'bulk_publish') {
+    if (!$isPrivileged) err('Unauthorized', 403);
+    $ids       = post('ids') ?? [];
+    $published = (int)(post('published') ?? 0);
+    if (!is_array($ids) || !count($ids)) err('ids array required');
+    // Validate all IDs are integers
+    $ids = array_map('intval', $ids);
+    $ids = array_filter($ids);
+    if (!$ids) err('No valid ids');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    // For 0→1 transitions, collect category IDs to notify members
+    if ($published) {
+        $prevStmt = $db->prepare(
+            "SELECT DISTINCT category_id FROM tutorial_questions
+             WHERE id IN ($placeholders) AND published = 0"
+        );
+        $prevStmt->execute(array_values($ids));
+        $notifyCats = $prevStmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+    $upd = $db->prepare("UPDATE tutorial_questions SET published=? WHERE id IN ($placeholders)");
+    $upd->execute(array_merge([$published ? 1 : 0], array_values($ids)));
+    // Fire notifications for newly-published categories
+    if ($published && !empty($notifyCats)) {
+        foreach ($notifyCats as $catId) {
+            $catId = (int)$catId;
+            $cs = $db->prepare("SELECT name FROM tutorial_categories WHERE id=?");
+            $cs->execute([$catId]);
+            $catName = (string)$cs->fetchColumn();
+            notifyStartedMembers($db, $catId, $me['id'], "New questions published in \"$catName\"");
+        }
+    }
+    json_out(['ok' => true]);
+}
+
 // ── MARK VIEWED ───────────────────────────────────────────────────
 if ($action === 'mark_viewed') {
     $qid = (int)post('question_id');

@@ -2158,9 +2158,13 @@ async function buildTutAdminQuestions(el, catId) {
   try {
     const { questions, category } = await apiGet('tutorials.php', { action: 'list_questions', category_id: catId });
     const rows = questions.map((q, i) => `
-      <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:14px 16px;width:36px;color:var(--text-m);font-size:12px;font-weight:700">${i + 1}</td>
+      <tr style="border-bottom:1px solid var(--border)" id="tq-row-${q.id}">
+        <td style="padding:14px 16px;width:40px;text-align:center">
+          <input type="checkbox" class="tq-sel" value="${q.id}" onchange="updateTutBulkBar()"
+            style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">
+        </td>
         <td style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text-l);font-weight:600;margin-bottom:3px">#${i + 1}</div>
           <div style="font-weight:600;font-size:13px;margin-bottom:5px">${escHtml(q.question)}</div>
           <div style="font-size:12px;color:var(--text-m);line-height:1.6;white-space:pre-wrap">${escHtml(q.answer)}</div>
         </td>
@@ -2184,10 +2188,19 @@ async function buildTutAdminQuestions(el, catId) {
         <button class="btn btn-ghost btn-sm" onclick="openBulkUploadModal(${catId})">📋 Bulk Upload</button>
         <button class="btn btn-primary btn-sm" onclick="openAddQuestionModal(${catId})">＋ Add Question</button>
       </div>
+      <div id="tut-bulk-bar" style="display:none;align-items:center;gap:10px;background:var(--primary-bg);border:1px solid var(--primary-l);border-radius:var(--r);padding:10px 16px;margin-bottom:12px;flex-wrap:wrap">
+        <span id="tut-bulk-count" style="font-size:13px;font-weight:700;color:var(--primary);flex:1">0 selected</span>
+        <button class="btn btn-primary btn-sm" onclick="bulkTutPublish(1)">✓ Publish Selected</button>
+        <button class="btn btn-outline btn-sm" onclick="bulkTutPublish(0)">Set to Draft</button>
+        <button class="btn btn-ghost btn-sm" onclick="selectAllTutQuestions(false)">✕ Deselect All</button>
+      </div>
       <div class="card" style="padding:0;overflow:hidden">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="border-bottom:2px solid var(--border)">
-            <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700">#</th>
+            <th style="padding:11px 16px;width:40px;text-align:center">
+              <input type="checkbox" id="tq-sel-all" onchange="selectAllTutQuestions(this.checked)"
+                style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)" title="Select all">
+            </th>
             <th style="padding:11px 16px;text-align:left;font-size:11.5px;color:var(--text-m);font-weight:700">Question & Answer</th>
             <th style="padding:11px 16px;text-align:center;font-size:11.5px;color:var(--text-m);font-weight:700">Status</th>
             <th style="padding:11px 16px;text-align:right;font-size:11.5px;color:var(--text-m);font-weight:700">Actions</th>
@@ -2198,6 +2211,36 @@ async function buildTutAdminQuestions(el, catId) {
   } catch(e) {
     el.innerHTML = `<div class="empty"><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`;
   }
+}
+
+function selectAllTutQuestions(checked) {
+  document.querySelectorAll('.tq-sel').forEach(cb => { cb.checked = checked; });
+  const master = document.getElementById('tq-sel-all');
+  if (master) master.checked = checked;
+  updateTutBulkBar();
+}
+
+function updateTutBulkBar() {
+  const all      = [...document.querySelectorAll('.tq-sel')];
+  const selected = all.filter(cb => cb.checked);
+  const bar      = document.getElementById('tut-bulk-bar');
+  const count    = document.getElementById('tut-bulk-count');
+  const master   = document.getElementById('tq-sel-all');
+  if (!bar) return;
+  bar.style.display   = selected.length > 0 ? 'flex' : 'none';
+  if (count)  count.textContent = `${selected.length} question${selected.length !== 1 ? 's' : ''} selected`;
+  if (master) master.indeterminate = selected.length > 0 && selected.length < all.length;
+  if (master && selected.length === all.length && all.length > 0) master.checked = true;
+}
+
+async function bulkTutPublish(published) {
+  const ids = [...document.querySelectorAll('.tq-sel:checked')].map(cb => parseInt(cb.value));
+  if (!ids.length) return;
+  try {
+    await apiPost('tutorials.php', { action: 'bulk_publish', ids, published });
+    toast(`${ids.length} question${ids.length !== 1 ? 's' : ''} ${published ? 'published' : 'set to draft'}`);
+    renderAdminTab();
+  } catch(e) { toast(e.message); }
 }
 
 function tutAdminSelectCat(catId) {
